@@ -2,44 +2,32 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/172b7298869362d6f58dbf19976ff2241d9eacee";
     nixpkgs-stable.url = "github:NixOS/nixpkgs/nixos-24.11";
-    xnode-discourse = {
-      url = "github:johnforfar/xnode-discourse";
-      inputs.nixpkgs.follows = "nixpkgs";
-      inputs.nixpkgs-stable.follows = "nixpkgs-stable";
-    };
   };
 
   outputs =
     {
       self,
       nixpkgs-stable,
-      xnode-discourse,
       ...
     }:
     let
       system = "x86_64-linux";
+      pkgs = nixpkgs-stable.legacyPackages.${system};
     in
     {
       nixosConfigurations.xnode-discourse = nixpkgs-stable.lib.nixosSystem {
         inherit system;
-        specialArgs = {
-          inherit xnode-discourse;
-        };
         modules = [
           (
-            { xnode-discourse, ... }:
+            { ... }:
             {
-              imports = [
-                xnode-discourse.nixosModules.default
-              ];
-
-              # Install Discourse package if not provided by the module
-              environment.systemPackages = with nixpkgs-stable.legacyPackages.${system}; [ discourse ];
+              # Install Discourse package
+              environment.systemPackages = [ pkgs.discourse ];
 
               # Enable and configure PostgreSQL for Discourse
               services.postgresql = {
                 enable = true;
-                package = nixpkgs-stable.legacyPackages.${system}.postgresql_16;
+                package = pkgs.postgresql_16;
                 ensureDatabases = [ "discourse" ];
                 ensureUsers = [
                   {
@@ -49,7 +37,7 @@
                     };
                   }
                 ];
-                initialScript = nixpkgs-stable.legacyPackages.${system}.writeText "postgresql-init.sql" ''
+                initialScript = pkgs.writeText "postgresql-init.sql" ''
                   ALTER USER discourse WITH PASSWORD 'your_secure_password';
                 '';
               };
@@ -72,20 +60,20 @@
                 };
               };
 
-              # Define a systemd service for Discourse (if not provided by the module)
+              # Define a systemd service for Discourse
               systemd.services.discourse = {
                 description = "Discourse web application";
                 after = [ "network.target" "postgresql.service" "redis.service" ];
                 wantedBy = [ "multi-user.target" ];
                 serviceConfig = {
-                  ExecStart = "${nixpkgs-stable.legacyPackages.${system}.discourse}/bin/rails server -b 0.0.0.0 -p 3000";
+                  ExecStart = "${pkgs.discourse}/bin/rails server -b 0.0.0.0 -p 3000";
                   User = "discourse";
                   WorkingDirectory = "/var/lib/discourse";
                   Restart = "always";
                 };
                 preStart = ''
                   # Run database migrations
-                  ${nixpkgs-stable.legacyPackages.${system}.discourse}/bin/rake db:migrate
+                  ${pkgs.discourse}/bin/rake db:migrate
                 '';
               };
 
